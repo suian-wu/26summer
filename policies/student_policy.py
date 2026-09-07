@@ -36,6 +36,12 @@ GRASP_HEIGHT_SAFETY_FRACTION = 0.5
 # redundant elbow configuration can drift step to step.
 CARTESIAN_STEP = 0.02
 POSITION_TOLERANCE = 0.015
+# During transit_pick/transit_place, if height sags below this tolerance
+# from TRANSIT_HEIGHT (small joint-space/IK coupling can let z drift while
+# xy is still catching up to a far target), stop chasing the horizontal
+# target for this step and fix height first. This re-checks every act()
+# call, so drift never accumulates into a real collision risk.
+TRANSIT_HEIGHT_TOLERANCE = 0.03
 # Decision counts do not correspond to a fixed amount of simulated time: the
 # async driver sometimes reuses one decision for many physics steps and
 # sometimes calls act() almost every step, so "wait N decisions" and "wait
@@ -129,7 +135,7 @@ class StudentPolicy:
             transit_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT])
             return self._move_to(
                 observation, transit_target, gripper=1.0, next_stage="descend_pick",
-                stage_name="transit_pick", action=action,
+                stage_name="transit_pick", action=action, guard_height=TRANSIT_HEIGHT,
             )
         if self.stage == "descend_pick":
             # xy is already aligned with the target; only z changes here.
@@ -153,7 +159,7 @@ class StudentPolicy:
             transit_target = np.array([action.place_world[0], action.place_world[1], TRANSIT_HEIGHT])
             return self._move_to(
                 observation, transit_target, gripper=0.0, next_stage="descend_place",
-                stage_name="transit_place", action=action,
+                stage_name="transit_place", action=action, guard_height=TRANSIT_HEIGHT,
             )
         if self.stage == "descend_place":
             assert action.place_world is not None
@@ -219,6 +225,7 @@ class StudentPolicy:
         next_stage: str,
         stage_name: str,
         action: _PickPlaceAction,
+        guard_height: float | None = None,
     ) -> PolicyDecision:
         # Solving IK directly for a target 20-30cm away lets the redundant
         # (elbow) degree of freedom wander between calls, so the joint-space
@@ -228,12 +235,26 @@ class StudentPolicy:
         # gripper actually is right now, and bias the solver toward the
         # current joint pose (rest_qpos) so the elbow configuration stays
         # stable step to step.
-        offset = target_position - observation.ee_position
+        height_error = None
+        if guard_height is not None:
+            height_error = float(observation.ee_position[2] - guard_height)
+        if guard_height is not None and abs(height_error) > TRANSIT_HEIGHT_TOLERANCE:
+            # Height sagged too far below (or crept too far above) the safe
+            # transit plane while xy was still catching up to a distant
+            # target. Ignore the horizontal target for this one step and
+            # fix height first, re-checked every call, so drift can never
+            # accumulate into an actual collision with tabletop objects.
+            immediate_target = np.array(
+                [observation.ee_position[0], observation.ee_position[1], guard_height]
+            )
+        else:
+            immediate_target = target_position
+        offset = immediate_target - observation.ee_position
         distance = float(np.linalg.norm(offset))
         if distance > CARTESIAN_STEP:
             waypoint = observation.ee_position + offset * (CARTESIAN_STEP / distance)
         else:
-            waypoint = target_position
+            waypoint = immediate_target
         result = self.ik.solve(
             observation.joint_position,
             waypoint,
@@ -249,7 +270,8 @@ class StudentPolicy:
             stage=stage_name,
             rationale=(
                 f"Target {target_position.round(3).tolist()}, waypoint {waypoint.round(3).tolist()}, "
-                f"error={position_error:.3f}m, ik_converged={result.converged}."
+                f"error={position_error:.3f}m, ik_converged={result.converged}, "
+                f"height_guard={'fixing' if height_error is not None and abs(height_error) > TRANSIT_HEIGHT_TOLERANCE else 'ok'}."
             ),
             target_id=action.pick_id,
         )
