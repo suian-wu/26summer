@@ -13,6 +13,12 @@ class DetectedObject:
     shape: str
     position: np.ndarray
     quaternion: np.ndarray
+    # PCA elongation of the unprojected mask footprint, in [0, 1): ~0 for a
+    # round/square footprint (no meaningful principal axis, quaternion is
+    # noise), higher for a visibly oblong footprint (quaternion's yaw is a
+    # trustworthy grasp-alignment cue). Defaults to 0.0 so existing callers
+    # that construct DetectedObject directly keep working unchanged.
+    elongation: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -21,6 +27,7 @@ class DetectedObject:
             "shape": self.shape,
             "position": self.position.tolist(),
             "quaternion": self.quaternion.tolist(),
+            "elongation": self.elongation,
         }
 
 

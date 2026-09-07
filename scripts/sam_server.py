@@ -102,6 +102,34 @@ def _pack_masks(masks: np.ndarray) -> dict[str, Any]:
     return {"count": count, "packed": base64.b64encode(packed.tobytes()).decode("ascii")}
 
 
+# Grounding DINO occasionally proposes a box spanning most of the frame
+# instead of the actual object -- observed in practice: a "yellow square
+# tray" box covering ~74% of a 256x256 overhead frame, engulfing the
+# tabletop and part of the robot arm, while a second, only slightly
+# lower-scoring candidate correctly boxed the real tray at ~13% of the
+# frame. perception.py's client just takes the highest-scoring candidate,
+# so an oversized top candidate silently wins even when a good one exists
+# right behind it. Every real object/container in this scene occupies well
+# under a third of the frame even at closest range, so dropping oversized
+# proposals here -- before segmentation, before the client ever sees them --
+# lets the next-best (and often correct) candidate take over automatically.
+MAX_BOX_AREA_FRACTION = 0.40
+
+
+def _drop_oversized_boxes(
+    boxes: np.ndarray, scores: np.ndarray, image_size: tuple[int, int]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Discard proposal boxes covering an implausible fraction of the frame."""
+    if len(boxes) == 0:
+        return boxes, scores
+    width, height = image_size
+    widths = np.clip(boxes[:, 2] - boxes[:, 0], 0.0, None)
+    heights = np.clip(boxes[:, 3] - boxes[:, 1], 0.0, None)
+    area_fraction = (widths * heights) / float(width * height)
+    keep = area_fraction <= MAX_BOX_AREA_FRACTION
+    return boxes[keep], scores[keep]
+
+
 def infer(image_jpeg_b64: str, prompts: list[str]) -> dict[str, Any]:
     image_bytes = base64.b64decode(image_jpeg_b64)
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -112,6 +140,7 @@ def infer(image_jpeg_b64: str, prompts: list[str]) -> dict[str, Any]:
         boxes, scores = _detect_boxes(
             image, prompt, box_threshold=0.30, text_threshold=0.25
         )
+        boxes, scores = _drop_oversized_boxes(boxes, scores, image.size)
         masks = _segment_boxes(image_rgb, boxes)
         results.append(
             {

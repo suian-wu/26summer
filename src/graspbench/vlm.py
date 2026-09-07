@@ -18,6 +18,12 @@ from .perception import GroundingResult, ModelServiceError, SAM3DetectionDebug
 from .types import CameraObservation, DetectedObject
 
 
+def _truncate_for_error(response: Any, *, limit: int = 500) -> str:
+    """Render a service response for an error message without flooding logs."""
+    text = json.dumps(response, ensure_ascii=False)[:limit]
+    return text
+
+
 @dataclass(frozen=True)
 class VLMConfig:
     """Configuration for an OpenAI-compatible, image-capable chat endpoint.
@@ -192,7 +198,9 @@ class OpenAICompatibleVLM:
             reason = str(parsed["reason"]).strip()
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             raise ModelServiceError(
-                "Invalid OpenAI-compatible VLM grounding response (expected choices[0].message.content JSON)"
+                "Invalid OpenAI-compatible VLM grounding response (expected "
+                "choices[0].message.content JSON); raw service response: "
+                f"{_truncate_for_error(response)}"
             ) from exc
         if target_id not in detections:
             raise ModelServiceError(
@@ -308,7 +316,8 @@ class OpenAICompatibleVLM:
             )
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             raise ModelServiceError(
-                "Invalid VLM task-plan response (expected actions and reason JSON)"
+                "Invalid VLM task-plan response (expected actions and reason JSON); "
+                f"raw service response: {_truncate_for_error(response)}"
             ) from exc
         picks = [action.pick_id for action in actions]
         if len(set(picks)) != len(picks):

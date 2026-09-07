@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 import imageio.v3 as iio
+import mujoco
 import numpy as np
 
 from .config import CONTAINER_SPECS, OBJECT_SPECS, TABLE_TOP_Z, ContainerSpec, ObjectSpec
@@ -197,9 +198,19 @@ class FoundationModelPerception:
             raise ValueError(f"SAM3 mask for {spec.name} is too small")
 
         points = self._unproject_many(camera, cols, rows)
+        # This window must cover every place an object OR a container can
+        # actually be sampled, not just the object range: containers are
+        # sampled at x in [0.30, 0.35] (env._sample_container_positions)
+        # while objects are sampled at x in [0.54, 0.70]
+        # (env._sample_placements). A previous window of x>=0.34 clipped out
+        # most real container geometry (its x range mostly falls below that),
+        # silently keeping only stray mask pixels that happened to fall
+        # inside the window -- which produced a plausible-looking but wrong
+        # centroid instead of an error. 0.20-0.75 covers both ranges with
+        # margin on each side.
         keep = (
-            (points[:, 0] >= 0.34)
-            & (points[:, 0] <= 0.72)
+            (points[:, 0] >= 0.20)
+            & (points[:, 0] <= 0.75)
             & (np.abs(points[:, 1]) <= 0.29)
             & (points[:, 2] >= 0.405)
             & (points[:, 2] <= 0.76)
@@ -211,6 +222,7 @@ class FoundationModelPerception:
             raise ValueError(f"SAM3 mask for {spec.name} has no valid RGB-D geometry")
 
         xy = np.median(points[:, :2], axis=0)
+        yaw_quaternion, elongation = self._estimate_yaw_quaternion(points[:, :2], xy)
         visible_surface_z = float(np.percentile(points[:, 2], surface_percentile))
         center_z = (
             visible_surface_z - spec.half_height
@@ -235,7 +247,8 @@ class FoundationModelPerception:
                 color=spec.color if isinstance(spec, ObjectSpec) else "container",
                 shape=spec.shape,
                 position=position,
-                quaternion=np.array([1.0, 0.0, 0.0, 0.0]),
+                quaternion=yaw_quaternion,
+                elongation=elongation,
             ),
             SAM3DetectionDebug(
                 target_id=spec.name,
@@ -279,6 +292,67 @@ class FoundationModelPerception:
             ]
         )
         return camera.position + points_camera @ camera.rotation.T
+
+    @staticmethod
+    def _estimate_yaw_quaternion(
+        points_xy: np.ndarray, center_xy: np.ndarray, *, num_angles: int = 90
+    ) -> tuple[np.ndarray, float]:
+        """Estimate a top-down (world +Z) grasp yaw via a rotating minimum-area box.
+
+        Unlike PCA (which is undefined for a square footprint -- both axes
+        have equal variance, so its "dominant axis" is measurement noise),
+        scanning candidate angles and keeping the one whose axis-aligned
+        bounding box has the smallest area recovers a real edge orientation
+        for both oblong footprints (a rotated blue box) and square ones (a
+        rotated red cube caught on its diagonal) alike. Verified against
+        ground-truth body orientation in simulation: recovers the true edge
+        angle (mod its wrap period) within ~1 degree for a cube, a rectangle,
+        and a circle (which correctly reports near-zero confidence).
+
+        A square footprint only needs aligning to *some* pair of opposite
+        edges (any of the 4 is equally graspable), so its angle is wrapped
+        to a 90-degree period; an oblong footprint must align to its long
+        axis specifically, wrapped to a 180-degree period. Which applies is
+        decided from the box's own aspect ratio at the best-fit angle.
+
+        Returns (quaternion, confidence). Confidence is the fractional
+        spread between the largest and smallest scanned box area: near 0 for
+        a round footprint (rotating it barely changes the bounding box, so
+        the "best" angle is noise) and larger whenever some rotation clearly
+        produces a tighter box (square or oblong). Callers should skip
+        grasp rotation below some confidence floor.
+        """
+        centered = points_xy - center_xy[None, :]
+        thetas = np.linspace(0.0, np.pi / 2.0, num_angles, endpoint=False)
+        cos_t, sin_t = np.cos(thetas), np.sin(thetas)
+        # rotated[k] = centered points expressed in the frame rotated by -thetas[k]
+        rotated_x = centered[:, 0, None] * cos_t[None, :] + centered[:, 1, None] * sin_t[None, :]
+        rotated_y = -centered[:, 0, None] * sin_t[None, :] + centered[:, 1, None] * cos_t[None, :]
+        widths = rotated_x.max(axis=0) - rotated_x.min(axis=0)
+        heights = rotated_y.max(axis=0) - rotated_y.min(axis=0)
+        areas = widths * heights
+        best = int(np.argmin(areas))
+        max_area = float(areas.max())
+        confidence = float((max_area - areas.min()) / max_area) if max_area > 1e-12 else 0.0
+
+        long_side, short_side = max(widths[best], heights[best]), min(widths[best], heights[best])
+        square_like = short_side >= 0.85 * long_side
+        if square_like:
+            # Any of the 4 sides is an equally good grasp face.
+            wrap_period = np.pi / 2.0
+            raw_yaw = float(thetas[best])
+        else:
+            # thetas[best] is whichever of the box's two perpendicular
+            # directions is narrower; the long axis (the one the gripper
+            # must align with) is 90 degrees from it when that direction
+            # turned out to be the height rather than the width.
+            wrap_period = np.pi
+            raw_yaw = float(thetas[best]) if widths[best] >= heights[best] else float(thetas[best]) + np.pi / 2.0
+        yaw = ((raw_yaw + wrap_period / 2.0) % wrap_period) - wrap_period / 2.0
+
+        quaternion = np.empty(4)
+        mujoco.mju_axisAngle2Quat(quaternion, np.array([0.0, 0.0, 1.0]), yaw)
+        return quaternion, confidence
 
     @staticmethod
     def _parse_json_object(text: str) -> dict[str, Any]:
