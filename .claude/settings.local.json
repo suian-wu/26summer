@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment\")",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/**)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/**)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/src/**)",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile policies/student_policy.py && echo COMPILE_OK && grep -n 'approach\\\\|\\\\\"lift\\\\\"\\\\|\\\\\"transit\\\\\"\\\\|place_descend' policies/student_policy.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile policies/student_policy.py && echo COMPILE_OK\")",
+      "Bash(wsl -e bash -lc 'cd ~/mujoco-grasp-assignment && python3 -c \" *)",
+      "Bash(wsl -e bash -lc 'cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -c \" *)",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && ls -la runs/task1_dev/*/events.jsonl 2>&1\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile policies/student_policy.py && echo COMPILE_OK && grep -n 'grip_steps\\\\|grip_stable_count\\\\|last_gripper_opening\\\\|GRIP_STALL_DELTA\\\\|GRIP_STABLE_DECISIONS\\\\|GRIP_MAX_STEPS' policies/student_policy.py\")"
+    ]
+  }
+}

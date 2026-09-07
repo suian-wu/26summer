@@ -1,0 +1,21 @@
+cd ~/mujoco-grasp-assignment
+source .venv/bin/activate
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+python scripts/sam_server.py \
+  --sam2-checkpoint ~/sam2-src/checkpoints/sam2.1_hiera_large.pt \
+  --sam2-config configs/sam2.1/sam2.1_hiera_l.yaml \
+  --device cuda
+
+
+python -m graspbench.evaluate \
+  --policy policies.student_policy:StudentPolicy \
+  --tasks configs/task1_place_public.json \
+  --episodes 1 --output runs/task1_dev
+
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+
+
+python -m graspbench.evaluate \
+  --policy policies.student_policy:StudentPolicy \
+  --tasks configs/task1_place_public.json \
+  --episodes 1 --video --output runs/task1_dev
