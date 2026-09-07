@@ -1,5 +1,7 @@
 cd ~/mujoco-grasp-assignment
 source .venv/bin/activate
+export HF_HUB_OFFLINE=1
+
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 python scripts/sam_server.py \
   --sam2-checkpoint ~/sam2-src/checkpoints/sam2.1_hiera_large.pt \
