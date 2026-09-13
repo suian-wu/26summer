@@ -24,11 +24,6 @@ from graspbench.vlm import OpenAICompatibleVLM
 # the correct wrap period per shape.
 ELONGATION_ALIGN_THRESHOLD = 0.25
 
-# After rising from placement, hold position for this long before running
-# verification detection, so the placed object has time to settle under
-# gravity and contact forces before the camera snapshot is taken.
-PRE_VERIFY_SETTLE_SECONDS = 2.0
-
 # Horizontal transit always happens at this fixed height, comfortably above
 # every object and container, so it is physically impossible for a sideways
 # move to sweep something off the table: only vertical stages ever change z
@@ -52,7 +47,7 @@ GRASP_HEIGHT_SAFETY_FRACTION = 0.5
 # straight line in task space, instead of solving for a distant goal whose
 # redundant elbow configuration can drift step to step.
 CARTESIAN_STEP = 0.02
-POSITION_TOLERANCE = 0.02
+POSITION_TOLERANCE = 0.015
 DESCEND_POSITION_TOLERANCE = 0.015
 # At HOME_Q the arm's own body sits inside the overhead camera's view,
 # which pushed Grounding DINO's "yellow square tray" box confidence below
@@ -71,7 +66,7 @@ STARTING_SHIFT_Y = -0.33
 # rim while passing over it. Lifting to TRANSIT_HEIGHT during the same
 # shift keeps the whole move above every container/object, exactly like
 # every other horizontal move in this policy.
-STARTING_SHIFT_TOLERANCE = 0.05
+STARTING_SHIFT_TOLERANCE = 0.015
 # During transit_pick/transit_place, if height sags below this tolerance
 # from TRANSIT_HEIGHT (small joint-space/IK coupling can let z drift while
 # xy is still catching up to a far target), stop chasing the horizontal
@@ -89,7 +84,7 @@ TRANSIT_HEIGHT_TOLERANCE = 0.04
 # simulator's own clock (Observation.time, immune to decision-count noise)
 # and simply hold the close/open command for a fixed amount of simulated
 # time before advancing.
-GRIP_SETTLE_SECONDS = 1.0
+GRIP_SETTLE_SECONDS = 0.5
 # After descend_pick reaches its position tolerance, wait this long (settled
 # in place, gripper still commanded open) before starting to close, so a
 # late-arriving IK correction cannot get mistaken for "close" starting too
@@ -126,7 +121,6 @@ class StudentPolicy:
         self.descend_settle_deadline: float | None = None
         self.retry_count = 0
         self.terminal = False
-        self.pre_verify_settle_deadline: float | None = None
 
     def act(self, observation: Observation) -> PolicyDecision:
         if self.home_quaternion is None:
@@ -174,11 +168,10 @@ class StudentPolicy:
         if self.stage == "transit_pick":
             # Pure horizontal move at a height above every object and
             # container, so the approach path cannot sweep anything aside.
-            #transit_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT])
-            transit_target = np.array([action.pick_world[0], action.pick_world[1], action.pick_world[2] + 0.1])
+            transit_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT])
             return self._move_to(
                 observation, transit_target, gripper=1.0, next_stage="align_pick",
-                stage_name="transit_pick", action=action, guard_height=transit_target[2],
+                stage_name="transit_pick", action=action, guard_height=TRANSIT_HEIGHT,
             )
         if self.stage == "align_pick":
             # Rotate in place (xy/z fixed at transit height) before
@@ -193,7 +186,6 @@ class StudentPolicy:
             # xy is already aligned with the target; only z changes here.
             # 在抓取目标位置基础上再降低0.02m，让夹爪抓得更低
             pick_target = action.pick_world.copy()
-            pick_target[1] -= 0.008
             pick_target[2] -= 0.015  # ← Z轴向下为负，根据需要调整此值
             return self._move_to(
                 observation, pick_target, gripper=1.0, next_stage="settle_before_close",
@@ -205,7 +197,7 @@ class StudentPolicy:
         if self.stage == "close":
             return self._close_gripper(observation, action)
         if self.stage == "rise_after_pick":
-            rise_target = np.array([action.pick_world[0], action.pick_world[1], action.place_world[2]+0.1])
+            rise_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT+0.01])
             next_stage = "transit_place" if action.place_world is not None else "verify"
             # Keep whatever orientation the object was actually grasped at
             # while carrying it: snapping back to the home orientation here
@@ -213,15 +205,15 @@ class StudentPolicy:
             # the exact grip-loosening-under-motion failure already fixed.
             return self._move_to(
                 observation, rise_target, gripper=0.0, next_stage=next_stage,
-                stage_name="lift", action=action, target_quaternion=action.pick_quaternion,position_tolerance=0.038,guard_height=rise_target[2]
+                stage_name="lift", action=action, target_quaternion=action.pick_quaternion,
             )
         if self.stage == "transit_place":
             assert action.place_world is not None
-            transit_target = np.array([action.place_world[0], action.place_world[1], action.place_world[2]+0.1])
+            transit_target = np.array([action.place_world[0], action.place_world[1], TRANSIT_HEIGHT])
             return self._move_to(
                 observation, transit_target, gripper=0.0, next_stage="descend_place",
-                stage_name="transit_place", action=action, guard_height=action.place_world[2]+0.1,
-                target_quaternion=action.pick_quaternion,position_tolerance=POSITION_TOLERANCE+0.01
+                stage_name="transit_place", action=action, guard_height=TRANSIT_HEIGHT,
+                target_quaternion=action.pick_quaternion,
             )
         if self.stage == "descend_place":
             assert action.place_world is not None
@@ -238,31 +230,14 @@ class StudentPolicy:
             assert action.place_world is not None
             rise_target = np.array([action.place_world[0], action.place_world[1], TRANSIT_HEIGHT])
             return self._move_to(
-                observation, rise_target, gripper=1.0, next_stage="settle_before_verify",
+                observation, rise_target, gripper=1.0, next_stage="verify",
                 stage_name="rise_after_place", action=action,
             )
-        if self.stage == "settle_before_verify":
-            return self._settle_before_verify(observation, action)
-        
         if self.stage == "verify":
             return self._verify(observation, action)
 
         raise RuntimeError(f"Unhandled stage: {self.stage!r}")
 
-    def _settle_before_verify(self, observation: Observation, action: _PickPlaceAction) -> PolicyDecision:
-        """Hold at transit height for PRE_VERIFY_SETTLE_SECONDS before verification."""
-        if self.pre_verify_settle_deadline is None:
-            self.pre_verify_settle_deadline = observation.time + PRE_VERIFY_SETTLE_SECONDS
-        remaining = self.pre_verify_settle_deadline - observation.time
-        if remaining <= 0.0:
-            self.pre_verify_settle_deadline = None
-            self.stage = "verify"
-        return PolicyDecision(
-            command=JointPositionCommand(observation.joint_position, 1.0),
-            stage="settle_before_verify",
-            rationale=f"Holding before verify; remaining_settle_s={max(remaining, 0.0):.2f}.",
-            target_id=action.pick_id,
-        )
     def _shift_start(self, observation: Observation) -> PolicyDecision:
         # Step the end-effector toward the round tray's side (y) and up to
         # the safe transit height (z) before the very first detection, so
