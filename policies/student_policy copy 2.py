@@ -33,7 +33,7 @@ ELONGATION_ALIGN_THRESHOLD = 0.25
 # runs out of vertical extension while reaching far). 0.52m stays reachable
 # across the whole tabletop x range (0.30-0.70m) while remaining above every
 # object and container height, so horizontal moves never clip anything.
-TRANSIT_HEIGHT = 0.55
+TRANSIT_HEIGHT = 0.52
 PLACE_DROP_GAP = 0.02
 # Measured against ground truth: SAM's depth-based center estimate for the
 # red cube came out ~1.2cm low (0.4214 vs true 0.4259), enough to make the
@@ -48,7 +48,6 @@ GRASP_HEIGHT_SAFETY_FRACTION = 0.5
 # redundant elbow configuration can drift step to step.
 CARTESIAN_STEP = 0.02
 POSITION_TOLERANCE = 0.015
-DESCEND_POSITION_TOLERANCE = 0.015
 # At HOME_Q the arm's own body sits inside the overhead camera's view,
 # which pushed Grounding DINO's "yellow square tray" box confidence below
 # threshold entirely (confirmed by direct HTTP checks against the live
@@ -72,7 +71,7 @@ STARTING_SHIFT_TOLERANCE = 0.015
 # xy is still catching up to a far target), stop chasing the horizontal
 # target for this step and fix height first. This re-checks every act()
 # call, so drift never accumulates into a real collision risk.
-TRANSIT_HEIGHT_TOLERANCE = 0.04
+TRANSIT_HEIGHT_TOLERANCE = 0.1
 # Decision counts do not correspond to a fixed amount of simulated time: the
 # async driver sometimes reuses one decision for many physics steps and
 # sometimes calls act() almost every step, so "wait N decisions" and "wait
@@ -84,7 +83,7 @@ TRANSIT_HEIGHT_TOLERANCE = 0.04
 # simulator's own clock (Observation.time, immune to decision-count noise)
 # and simply hold the close/open command for a fixed amount of simulated
 # time before advancing.
-GRIP_SETTLE_SECONDS = 0.2
+GRIP_SETTLE_SECONDS = 0.8
 # After descend_pick reaches its position tolerance, wait this long (settled
 # in place, gripper still commanded open) before starting to close, so a
 # late-arriving IK correction cannot get mistaken for "close" starting too
@@ -184,11 +183,8 @@ class StudentPolicy:
             return self._align_pick(observation, action)
         if self.stage == "descend_pick":
             # xy is already aligned with the target; only z changes here.
-            # 在抓取目标位置基础上再降低0.02m，让夹爪抓得更低
-            pick_target = action.pick_world.copy()
-            pick_target[2] -= 0.015  # ← Z轴向下为负，根据需要调整此值
             return self._move_to(
-                observation, pick_target, gripper=1.0, next_stage="settle_before_close",
+                observation, action.pick_world, gripper=1.0, next_stage="settle_before_close",
                 stage_name="descend_pick", action=action,
                 target_quaternion=action.pick_quaternion,
             )
@@ -197,7 +193,7 @@ class StudentPolicy:
         if self.stage == "close":
             return self._close_gripper(observation, action)
         if self.stage == "rise_after_pick":
-            rise_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT+0.01])
+            rise_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT])
             next_stage = "transit_place" if action.place_world is not None else "verify"
             # Keep whatever orientation the object was actually grasped at
             # while carrying it: snapping back to the home orientation here
@@ -217,12 +213,9 @@ class StudentPolicy:
             )
         if self.stage == "descend_place":
             assert action.place_world is not None
-             # 在目标位置基础上再降低0.05m，让夹爪放得更低
-            place_target = action.place_world.copy()
-            place_target[2] += 0.0
             return self._move_to(
-                observation, place_target, gripper=0.0, next_stage="release",
-                stage_name="descend_place", action=action, target_quaternion=action.pick_quaternion,position_tolerance=DESCEND_POSITION_TOLERANCE,
+                observation, action.place_world, gripper=0.0, next_stage="release",
+                stage_name="descend_place", action=action, target_quaternion=action.pick_quaternion,
             )
         if self.stage == "release":
             return self._open_gripper(observation, action)
@@ -342,7 +335,6 @@ class StudentPolicy:
         action: _PickPlaceAction,
         guard_height: float | None = None,
         target_quaternion: np.ndarray | None = None,
-        position_tolerance: float = POSITION_TOLERANCE, 
     ) -> PolicyDecision:
         # Solving IK directly for a target 20-30cm away lets the redundant
         # (elbow) degree of freedom wander between calls, so the joint-space
@@ -380,7 +372,7 @@ class StudentPolicy:
         )
         next_joint = move_toward(observation.joint_position, result.joint_position)
         position_error = float(np.linalg.norm(observation.ee_position - target_position))
-        if position_error < position_tolerance:
+        if position_error < POSITION_TOLERANCE:
             self.stage = next_stage
         return PolicyDecision(
             command=JointPositionCommand(next_joint, gripper),
@@ -507,7 +499,7 @@ class StudentPolicy:
             detected, _ = self.perception.detect_target(camera, action.pick_id, prior_xy=search_xy)
         except ModelServiceError:
             detected = None
-        
+
         if self._check_action_success(action, detected):
             self.action_index += 1
             self.stage = "rise_pick"

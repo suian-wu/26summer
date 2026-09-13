@@ -33,7 +33,7 @@ ELONGATION_ALIGN_THRESHOLD = 0.25
 # runs out of vertical extension while reaching far). 0.52m stays reachable
 # across the whole tabletop x range (0.30-0.70m) while remaining above every
 # object and container height, so horizontal moves never clip anything.
-TRANSIT_HEIGHT = 0.55
+TRANSIT_HEIGHT = 0.52
 PLACE_DROP_GAP = 0.02
 # Measured against ground truth: SAM's depth-based center estimate for the
 # red cube came out ~1.2cm low (0.4214 vs true 0.4259), enough to make the
@@ -41,38 +41,19 @@ PLACE_DROP_GAP = 0.02
 # straddling its waist and stall there. Nudge the descent target upward by a
 # fraction of the object's own half-height so the bias scales with object
 # size rather than being a fixed constant.
-GRASP_HEIGHT_SAFETY_FRACTION = 0.5
+GRASP_HEIGHT_SAFETY_FRACTION = 0.2
 # Cap each IK target to a short Cartesian hop from the current gripper
 # position so the joint-space interpolation between calls stays close to a
 # straight line in task space, instead of solving for a distant goal whose
 # redundant elbow configuration can drift step to step.
 CARTESIAN_STEP = 0.02
 POSITION_TOLERANCE = 0.015
-DESCEND_POSITION_TOLERANCE = 0.015
-# At HOME_Q the arm's own body sits inside the overhead camera's view,
-# which pushed Grounding DINO's "yellow square tray" box confidence below
-# threshold entirely (confirmed by direct HTTP checks against the live
-# sam_server.py -- the box vanished, not just shrank). round_tray sits at
-# y~+0.17 and square_tray at y~-0.19 (env._sample_container_positions), so
-# shifting the end-effector toward the round tray's side moves the arm's
-# body away from square_tray's region of the frame. This is a one-way
-# shift: the arm does not return to HOME_Q afterward, and every subsequent
-# stage (starting from rise_pick) simply continues from wherever this
-# shift ends, treating it as the episode's new starting point.
-STARTING_SHIFT_Y = 0.33
-# The round tray's rim sits above the tabletop (ContainerSpec floor_height
-# 0.41, max_object_center_height 0.55), so shifting sideways at the
-# unchanged home height (~0.47) let the end-effector snag on the tray's
-# rim while passing over it. Lifting to TRANSIT_HEIGHT during the same
-# shift keeps the whole move above every container/object, exactly like
-# every other horizontal move in this policy.
-STARTING_SHIFT_TOLERANCE = 0.015
 # During transit_pick/transit_place, if height sags below this tolerance
 # from TRANSIT_HEIGHT (small joint-space/IK coupling can let z drift while
 # xy is still catching up to a far target), stop chasing the horizontal
 # target for this step and fix height first. This re-checks every act()
 # call, so drift never accumulates into a real collision risk.
-TRANSIT_HEIGHT_TOLERANCE = 0.04
+TRANSIT_HEIGHT_TOLERANCE = 0.03
 # Decision counts do not correspond to a fixed amount of simulated time: the
 # async driver sometimes reuses one decision for many physics steps and
 # sometimes calls act() almost every step, so "wait N decisions" and "wait
@@ -84,7 +65,7 @@ TRANSIT_HEIGHT_TOLERANCE = 0.04
 # simulator's own clock (Observation.time, immune to decision-count noise)
 # and simply hold the close/open command for a fixed amount of simulated
 # time before advancing.
-GRIP_SETTLE_SECONDS = 0.2
+GRIP_SETTLE_SECONDS = 0.8
 # After descend_pick reaches its position tolerance, wait this long (settled
 # in place, gripper still commanded open) before starting to close, so a
 # late-arriving IK correction cannot get mistaken for "close" starting too
@@ -113,10 +94,9 @@ class StudentPolicy:
         self.vlm = OpenAICompatibleVLM()
 
         self.home_quaternion: np.ndarray | None = None
-        self.shift_target: np.ndarray | None = None
         self.actions: list[_PickPlaceAction] | None = None
         self.action_index = 0
-        self.stage = "shift_start"
+        self.stage = "init"
         self.grip_settle_deadline: float | None = None
         self.descend_settle_deadline: float | None = None
         self.retry_count = 0
@@ -131,19 +111,16 @@ class StudentPolicy:
         if self.terminal:
             return self._hold(observation, stage="terminal", rationale="Episode already finished.")
 
-        if self.actions is None:
-            if self.stage == "shift_start":
-                return self._shift_start(observation)
-            try:
-                self._ensure_plan(observation)
-            except ModelServiceError as exc:
-                self.terminal = True
-                return PolicyDecision(
-                    command=JointPositionCommand(observation.joint_position, 1.0),
-                    stage="model_error",
-                    rationale=f"Model service failed during planning; holding safely: {exc}",
-                    done=True,
-                )
+        try:
+            self._ensure_plan(observation)
+        except ModelServiceError as exc:
+            self.terminal = True
+            return PolicyDecision(
+                command=JointPositionCommand(observation.joint_position, 1.0),
+                stage="model_error",
+                rationale=f"Model service failed during planning; holding safely: {exc}",
+                done=True,
+            )
 
         assert self.actions is not None
         if self.action_index >= len(self.actions):
@@ -184,11 +161,8 @@ class StudentPolicy:
             return self._align_pick(observation, action)
         if self.stage == "descend_pick":
             # xy is already aligned with the target; only z changes here.
-            # 在抓取目标位置基础上再降低0.02m，让夹爪抓得更低
-            pick_target = action.pick_world.copy()
-            pick_target[2] -= 0.015  # ← Z轴向下为负，根据需要调整此值
             return self._move_to(
-                observation, pick_target, gripper=1.0, next_stage="settle_before_close",
+                observation, action.pick_world, gripper=1.0, next_stage="settle_before_close",
                 stage_name="descend_pick", action=action,
                 target_quaternion=action.pick_quaternion,
             )
@@ -197,7 +171,7 @@ class StudentPolicy:
         if self.stage == "close":
             return self._close_gripper(observation, action)
         if self.stage == "rise_after_pick":
-            rise_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT+0.01])
+            rise_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT])
             next_stage = "transit_place" if action.place_world is not None else "verify"
             # Keep whatever orientation the object was actually grasped at
             # while carrying it: snapping back to the home orientation here
@@ -217,12 +191,9 @@ class StudentPolicy:
             )
         if self.stage == "descend_place":
             assert action.place_world is not None
-             # 在目标位置基础上再降低0.05m，让夹爪放得更低
-            place_target = action.place_world.copy()
-            place_target[2] += 0.0
             return self._move_to(
-                observation, place_target, gripper=0.0, next_stage="release",
-                stage_name="descend_place", action=action, target_quaternion=action.pick_quaternion,position_tolerance=DESCEND_POSITION_TOLERANCE,
+                observation, action.place_world, gripper=0.0, next_stage="release",
+                stage_name="descend_place", action=action, target_quaternion=action.pick_quaternion,
             )
         if self.stage == "release":
             return self._open_gripper(observation, action)
@@ -237,54 +208,6 @@ class StudentPolicy:
             return self._verify(observation, action)
 
         raise RuntimeError(f"Unhandled stage: {self.stage!r}")
-
-    def _shift_start(self, observation: Observation) -> PolicyDecision:
-        # Step the end-effector toward the round tray's side (y) and up to
-        # the safe transit height (z) before the very first detection, so
-        # the move passes above the round tray's rim instead of snagging on
-        # it. This is a one-way move -- self.stage advances straight to
-        # "init" once close enough, and nothing ever sends the arm back to
-        # HOME_Q. Every later stage (rise_pick etc.) reads its starting
-        # position from observation.ee_position, so it simply continues
-        # from wherever this shift leaves the arm.
-        #
-        # The target must be computed once and cached, not recomputed from
-        # observation.ee_position on every call: recomputing it each time
-        # made the target chase the end-effector's own current position
-        # (target = current_y + offset, re-evaluated after current_y had
-        # already moved toward the previous target), so position_error
-        # never shrank -- confirmed in a live run where the target drifted
-        # from y=0.12 to y=0.23 over 30+ steps while error sat frozen at
-        # ~0.126 the whole time.
-        assert self.home_quaternion is not None
-        if self.shift_target is None:
-            self.shift_target = observation.ee_position.copy()
-            self.shift_target[1] += STARTING_SHIFT_Y
-            self.shift_target[2] = TRANSIT_HEIGHT
-        target = self.shift_target
-        offset = target - observation.ee_position
-        distance = float(np.linalg.norm(offset))
-        waypoint = (
-            observation.ee_position + offset * (CARTESIAN_STEP / distance)
-            if distance > CARTESIAN_STEP
-            else target
-        )
-        result = self.ik.solve(
-            observation.joint_position, waypoint, self.home_quaternion,
-            rest_qpos=observation.joint_position,
-        )
-        next_joint = move_toward(observation.joint_position, result.joint_position)
-        position_error = float(np.linalg.norm(observation.ee_position - target))
-        if position_error < STARTING_SHIFT_TOLERANCE:
-            self.stage = "init"
-        return PolicyDecision(
-            command=JointPositionCommand(next_joint, 1.0),
-            stage="shift_start",
-            rationale=(
-                f"Shifting toward the round tray's side before first detection; "
-                f"target={target.round(3).tolist()}, error={position_error:.3f}m."
-            ),
-        )
 
     def _ensure_plan(self, observation: Observation) -> None:
         if self.actions is not None:
@@ -342,7 +265,6 @@ class StudentPolicy:
         action: _PickPlaceAction,
         guard_height: float | None = None,
         target_quaternion: np.ndarray | None = None,
-        position_tolerance: float = POSITION_TOLERANCE, 
     ) -> PolicyDecision:
         # Solving IK directly for a target 20-30cm away lets the redundant
         # (elbow) degree of freedom wander between calls, so the joint-space
@@ -380,7 +302,7 @@ class StudentPolicy:
         )
         next_joint = move_toward(observation.joint_position, result.joint_position)
         position_error = float(np.linalg.norm(observation.ee_position - target_position))
-        if position_error < position_tolerance:
+        if position_error < POSITION_TOLERANCE:
             self.stage = next_stage
         return PolicyDecision(
             command=JointPositionCommand(next_joint, gripper),
@@ -507,7 +429,7 @@ class StudentPolicy:
             detected, _ = self.perception.detect_target(camera, action.pick_id, prior_xy=search_xy)
         except ModelServiceError:
             detected = None
-        
+
         if self._check_action_success(action, detected):
             self.action_index += 1
             self.stage = "rise_pick"

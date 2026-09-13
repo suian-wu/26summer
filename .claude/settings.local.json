@@ -10,7 +10,24 @@
       "Bash(wsl -e bash -lc 'cd ~/mujoco-grasp-assignment && python3 -c \" *)",
       "Bash(wsl -e bash -lc 'cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -c \" *)",
       "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && ls -la runs/task1_dev/*/events.jsonl 2>&1\")",
-      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile policies/student_policy.py && echo COMPILE_OK && grep -n 'grip_steps\\\\|grip_stable_count\\\\|last_gripper_opening\\\\|GRIP_STALL_DELTA\\\\|GRIP_STABLE_DECISIONS\\\\|GRIP_MAX_STEPS' policies/student_policy.py\")"
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile policies/student_policy.py && echo COMPILE_OK && grep -n 'grip_steps\\\\|grip_stable_count\\\\|last_gripper_opening\\\\|GRIP_STALL_DELTA\\\\|GRIP_STABLE_DECISIONS\\\\|GRIP_MAX_STEPS' policies/student_policy.py\")",
+      "Bash(wsl -e bash -lc 'cd ~/mujoco-grasp-assignment && source .venv/bin/activate && set -a && source .env 2>/dev/null; set +a && unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && python3 -c \" *)",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && ls -la runs/debug_overhead_seed31.png 2>&1\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && git status\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && git config core.autocrlf; git diff --stat README.md | head -5; git diff README.md | head -20\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && git checkout -b feature/grasp-orientation-align && git add policies/student_policy.py src/graspbench/perception.py src/graspbench/types.py src/graspbench/vlm.py src/graspbench/runner.py scripts/sam_server.py configs/task1_single_dev.json && git status\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile src/graspbench/perception.py && echo COMPILE_OK && set -a && source .env 2>/dev/null; set +a && python3 -m pytest tests/ -q 2>&1 | tail -20\")",
+      "Bash(wsl -e bash -lc \"cat /mnt/c/Users/SuianWu/AppData/Local/Temp/claude/--wsl-localhost-Ubuntu-22-04-home-suian-wu-mujoco-grasp-assignment/dbeeb873-a086-4749-8684-02cef42b4b7a/tasks/bp0wnnblw.output 2>&1 | tail -60\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile src/graspbench/perception.py && echo COMPILE_OK && grep -n '_COLOR_REFERENCE_RGB\\\\|_COLOR_MATCH_THRESHOLD\\\\|_apply_color_prior\\\\|_largest_connected_component' src/graspbench/perception.py; set -a && source .env 2>/dev/null; set +a && python3 -m pytest tests/ -q 2>&1 | tail -20\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'MAX_DETECTION_BOX_AREA_FRACTION' src/graspbench/perception.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile src/graspbench/perception.py && echo COMPILE_OK && grep -n 'MAX_DETECTION_BOX_AREA_FRACTION\\\\|_COLOR_REFERENCE_RGB\\\\|_apply_color_prior\\\\|_largest_connected_component' src/graspbench/perception.py; set -a && source .env 2>/dev/null; set +a && python3 -m pytest tests/ -q 2>&1 | tail -20\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile scripts/sam_server.py && echo COMPILE_OK\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && source .venv/bin/activate && python3 -m py_compile policies/student_policy.py && echo COMPILE_OK && set -a && source .env 2>/dev/null; set +a && python3 -m pytest tests/ -q 2>&1 | tail -20\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n '_move_to_clear_view' -A 15 policies/student_policy.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'control_dt\\\\|control_budget' src/graspbench/env.py src/graspbench/config.py | head -20\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'control_substeps' src/graspbench/env.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'HOME_Q' policies/student_policy.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'def _move_to_clear_view\\\\|def _restore_pose\\\\|def _ensure_plan' policies/student_policy.py\")"
     ]
   }
 }

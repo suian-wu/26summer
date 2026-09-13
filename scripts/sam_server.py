@@ -34,23 +34,55 @@ from PIL import Image
 
 _MODELS: dict[str, Any] = {}
 
+# OWLv2's confidence scores are not on the same scale as Grounding DINO's --
+# confirmed with a live no-threshold scan of a frame where DINO's cascade
+# had already failed: OWLv2 located the correct square_tray box (matching
+# DINO's own box on frames where DINO succeeds, ~13% of frame area) at only
+# score=0.16, while DINO's typical scores for a correct box run 0.3-0.5+.
+# Reusing DINO's 0.30 box_threshold for OWLv2 discarded that correct
+# candidate, silently defeating the whole point of the fallback. 0.10 keeps
+# it while still being comfortably above the oversized/spurious candidates
+# in that same scan (all scored <=0.09).
+OWLV2_BOX_THRESHOLD = 0.10
+
 
 def _load_models(device: str, *, sam2_checkpoint: str, sam2_config: str) -> None:
     from sam2.build_sam import build_sam2
     from sam2.sam2_image_predictor import SAM2ImagePredictor
-    from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+    from transformers import (
+        AutoModelForZeroShotObjectDetection,
+        AutoProcessor,
+        Owlv2ForObjectDetection,
+        Owlv2Processor,
+    )
 
-    dino_id = "IDEA-Research/grounding-dino-tiny"
+    # base has notably better recall than tiny on small/edge-of-frame
+    # objects: verified in practice, tiny returned zero candidates for
+    # "yellow square tray" in 5 of 6 Task 2 episodes even with the tray
+    # fully visible and unoccluded, while round_tray (same scene, larger
+    # apparent size) was detected every time.
+    dino_id = "IDEA-Research/grounding-dino-base"
     _MODELS["dino_processor"] = AutoProcessor.from_pretrained(dino_id)
     _MODELS["dino_model"] = (
         AutoModelForZeroShotObjectDetection.from_pretrained(dino_id).to(device).eval()
     )
+    # Fallback detector: even grounding-dino-base still returned zero
+    # candidates for "yellow square tray" in 2 of 6 Task 2 episodes (fully
+    # visible, unoccluded). OWLv2 is a CLIP-based region proposer with a
+    # different failure mode (ViT patch classification vs. DINO's
+    # transformer decoder queries), so it is used only as a per-prompt
+    # rescue when Grounding DINO comes back empty, rather than replacing it
+    # outright -- Grounding DINO remains more accurate overall.
+    owl_id = "google/owlv2-base-patch16-ensemble"
+    _MODELS["owl_processor"] = Owlv2Processor.from_pretrained(owl_id)
+    _MODELS["owl_model"] = Owlv2ForObjectDetection.from_pretrained(owl_id).to(device).eval()
     sam2_model = build_sam2(sam2_config, sam2_checkpoint, device=device)
     _MODELS["sam2_predictor"] = SAM2ImagePredictor(sam2_model)
     _MODELS["device"] = device
+    print(f"[sam_server] detector backends loaded: dino={dino_id!r} owlv2={owl_id!r}")
 
 
-def _detect_boxes(
+def _detect_boxes_dino(
     image: Image.Image, prompt: str, *, box_threshold: float, text_threshold: float
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (boxes_xyxy, scores) for one text prompt on the current frame."""
@@ -72,6 +104,58 @@ def _detect_boxes(
     )[0]
     boxes = results["boxes"].cpu().numpy().astype(np.float64)
     scores = results["scores"].cpu().numpy().astype(np.float64)
+    return boxes, scores
+
+
+def _detect_boxes_owlv2(
+    image: Image.Image, prompt: str, *, box_threshold: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (boxes_xyxy, scores) for one text prompt, using OWLv2 as a
+    rescue detector when Grounding DINO finds nothing for this prompt."""
+    processor = _MODELS["owl_processor"]
+    model = _MODELS["owl_model"]
+    device = _MODELS["device"]
+    text = prompt.strip().lower()
+    inputs = processor(images=image, text=[[text]], return_tensors="pt").to(device)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    results = processor.post_process_grounded_object_detection(
+        outputs, threshold=box_threshold, target_sizes=[image.size[::-1]]
+    )[0]
+    boxes = results["boxes"].cpu().numpy().astype(np.float64)
+    scores = results["scores"].cpu().numpy().astype(np.float64)
+    return boxes, scores
+
+
+def _detect_boxes(
+    image: Image.Image, prompt: str, *, box_threshold: float, text_threshold: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Grounding DINO first; if it returns nothing usable for this prompt,
+    retry with OWLv2 before giving up. Each prompt is decided independently,
+    so a tray that DINO cannot find does not affect an object DINO found
+    fine.
+
+    Oversized-box filtering must happen *inside* this cascade, before the
+    "did DINO find anything" check -- not afterward in infer(), as it used
+    to be. Previously infer() filtered oversized boxes only after this
+    function had already returned, so a DINO candidate that later turned
+    out to be an oversized false-positive (>40% of the frame) still counted
+    as "DINO succeeded" here, and OWLv2's rescue never fired. Confirmed live:
+    sam_server's own log showed "dino found 1 candidate(s)" for "yellow
+    square tray" while the client still received an empty box list, because
+    that lone candidate was the oversized one and got dropped afterward.
+    """
+    boxes, scores = _detect_boxes_dino(
+        image, prompt, box_threshold=box_threshold, text_threshold=text_threshold
+    )
+    boxes, scores = _drop_oversized_boxes(boxes, scores, image.size)
+    if len(boxes) > 0:
+        print(f"[sam_server] prompt={prompt!r}: dino found {len(boxes)} usable candidate(s)")
+        return boxes, scores
+    print(f"[sam_server] prompt={prompt!r}: dino found nothing usable, falling back to owlv2")
+    boxes, scores = _detect_boxes_owlv2(image, prompt, box_threshold=OWLV2_BOX_THRESHOLD)
+    boxes, scores = _drop_oversized_boxes(boxes, scores, image.size)
+    print(f"[sam_server] prompt={prompt!r}: owlv2 found {len(boxes)} usable candidate(s)")
     return boxes, scores
 
 
@@ -137,10 +221,13 @@ def infer(image_jpeg_b64: str, prompts: list[str]) -> dict[str, Any]:
 
     results = []
     for prompt in prompts:
+        # Oversized-box filtering already happened inside _detect_boxes,
+        # before the DINO/OWLv2 cascade decision -- doing it again here
+        # would be redundant, not harmful, but keeping it in exactly one
+        # place avoids the two filtering passes drifting out of sync.
         boxes, scores = _detect_boxes(
             image, prompt, box_threshold=0.30, text_threshold=0.25
         )
-        boxes, scores = _drop_oversized_boxes(boxes, scores, image.size)
         masks = _segment_boxes(image_rgb, boxes)
         results.append(
             {
