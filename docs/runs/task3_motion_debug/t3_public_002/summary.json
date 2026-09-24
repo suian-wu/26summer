@@ -1,0 +1,76 @@
+{
+  "episode_id": "t3_public_002",
+  "split": "public",
+  "seed": 92,
+  "instruction": "Sort the fruit into the round tray and the packaged food into the square tray.",
+  "expected_target": "apple",
+  "selected_target": "potted_meat_can",
+  "target_selection_correct": true,
+  "task_plan_matches_hidden_goal": true,
+  "success": true,
+  "terminal_reason": "success",
+  "control_steps": 2441,
+  "control_budget": 3000,
+  "sim_time_s": 97.87999999995328,
+  "wall_time_s": 516.7979887000001,
+  "execution_mode": "async",
+  "realtime": true,
+  "async_control": {
+    "submitted": 1171,
+    "accepted": 1170,
+    "stale_dropped": 1,
+    "model_errors": 0,
+    "safe_hold_steps": 40,
+    "reused_command_steps": 1231,
+    "last_latency_s": 0.30894570000236854
+  },
+  "last_stage": "release",
+  "verification_observed": true,
+  "retry_count": 0,
+  "unsafe_contact_count": 0,
+  "object_xy_displacement_m": {
+    "apple": 0.571507626254364,
+    "orange": 0.34351439384128934,
+    "mustard_bottle": 0.4614514643173625,
+    "potted_meat_can": 0.46298504936724855
+  },
+  "max_non_target_xy_displacement_m": 0.0,
+  "object_catalog": [
+    "red_cube",
+    "green_cylinder",
+    "blue_box",
+    "banana",
+    "apple",
+    "orange",
+    "mustard_bottle",
+    "potted_meat_can",
+    "scissors",
+    "marker"
+  ],
+  "task_kind": "sort",
+  "hidden_goals": [
+    {
+      "target": "apple",
+      "destination": "round_tray"
+    },
+    {
+      "target": "orange",
+      "destination": "round_tray"
+    },
+    {
+      "target": "mustard_bottle",
+      "destination": "square_tray"
+    },
+    {
+      "target": "potted_meat_can",
+      "destination": "square_tray"
+    }
+  ],
+  "goal_status": {
+    "apple->round_tray": true,
+    "orange->round_tray": true,
+    "mustard_bottle->square_tray": true,
+    "potted_meat_can->square_tray": true
+  },
+  "completed_goal_count": 4
+}

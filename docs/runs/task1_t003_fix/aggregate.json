@@ -1,0 +1,16 @@
+{
+  "episodes": 1,
+  "success_rate": 0.0,
+  "target_selection_accuracy": 1.0,
+  "verification_rate": 1.0,
+  "mean_control_steps": 504.0,
+  "mean_wall_time_s": 388.2728597000005,
+  "total_unsafe_contacts": 0,
+  "mean_non_target_displacement_m": 1.6189545028223964e-07,
+  "goal_completion_rate": 0.0,
+  "task_plan_match_rate": 1.0,
+  "policy": "policies.student_policy:StudentPolicy",
+  "task_file": "C:\\Users\\38363\\.codex\\visualizations\\2026\\09\\08\\01a08052-4d1e-7f73-93fe-6621611ceb5a\\t1_public_003.json",
+  "execution_mode": "async",
+  "realtime": true
+}

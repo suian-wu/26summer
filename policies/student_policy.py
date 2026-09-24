@@ -11,6 +11,7 @@ from graspbench.ik import DampedLeastSquaresIK, move_toward
 from graspbench.perception import FoundationModelPerception, ModelServiceError
 from graspbench.types import DetectedObject, JointPositionCommand, Observation, PolicyDecision
 from graspbench.vlm import OpenAICompatibleVLM
+from policies.lean import lean_quaternion, lean_safety_height, needs_lean
 
 # Below this confidence (rotating min-area-box scan, see
 # FoundationModelPerception._estimate_yaw_quaternion), the footprint is
@@ -89,7 +90,7 @@ TRANSIT_HEIGHT_TOLERANCE = 0.04
 # simulator's own clock (Observation.time, immune to decision-count noise)
 # and simply hold the close/open command for a fixed amount of simulated
 # time before advancing.
-GRIP_SETTLE_SECONDS = 1.0
+GRIP_SETTLE_SECONDS = 2.5
 # After descend_pick reaches its position tolerance, wait this long (settled
 # in place, gripper still commanded open) before starting to close, so a
 # late-arriving IK correction cannot get mistaken for "close" starting too
@@ -105,6 +106,12 @@ class _PickPlaceAction:
     pick_world: np.ndarray
     place_world: np.ndarray | None
     pick_quaternion: np.ndarray | None
+    # True when pick_quaternion is a lean.lean_quaternion() tilt rather than
+    # a straight-down (optionally yaw-aligned) grasp. Transit/align/descend
+    # stages need extra clearance height in this case (see lean_safety_height)
+    # because the tilted fingers swing further forward at the same wrist
+    # height than a vertical approach would.
+    is_leaning: bool = False
 
 
 class StudentPolicy:
@@ -163,22 +170,52 @@ class StudentPolicy:
         if self.stage == "rise_pick":
             # Pure vertical move: keep whatever xy we are already at and only
             # change height. This never drags the gripper sideways through an
-            # object at table height.
+            # object at table height. Must use the leaning orientation here
+            # too, for the same reason as transit_pick below: pairing a
+            # leaning-safety target height with a straight-down orientation
+            # asks IK for a z-only move the straight-down pose cannot make.
+            rise_height = (
+                lean_safety_height(TRANSIT_HEIGHT) if action.is_leaning else TRANSIT_HEIGHT
+            )
             rise_target = np.array(
-                [observation.ee_position[0], observation.ee_position[1], TRANSIT_HEIGHT]
+                [observation.ee_position[0], observation.ee_position[1], rise_height]
             )
             return self._move_to(
                 observation, rise_target, gripper=1.0, next_stage="transit_pick",
-                stage_name="rise_pick", action=action,
+                stage_name="rise_pick", action=action, target_quaternion=action.pick_quaternion,
             )
         if self.stage == "transit_pick":
             # Pure horizontal move at a height above every object and
             # container, so the approach path cannot sweep anything aside.
+            # A leaning approach needs extra clearance here: the tilted
+            # fingers swing further forward at the same wrist height than a
+            # vertical approach would (see lean.lean_safety_height).
+            #
+            # Must also use the leaning orientation here, not just at
+            # descend_pick: with the gripper still pointed straight down
+            # (the default when target_quaternion is omitted), "only change
+            # z" is not actually a pure vertical move in joint space once
+            # guard_height is raised well past the height a straight-down
+            # pose can reach at this xy -- IK keeps re-solving for an
+            # z-only target it cannot satisfy without moving xy too, so
+            # height_error never shrinks and the stage never advances.
+            # Confirmed live: mustard_bottle transit_pick stalled 2000+
+            # steps at height_guard=fixing, ee height oscillating ~0.50 m,
+            # never approaching the 0.6 m leaning-safety target, because the
+            # move was solved with a straight-down orientation the whole
+            # time. Using the same leaning orientation the object was
+            # already assigned makes "raise to this height" achievable.
             #transit_target = np.array([action.pick_world[0], action.pick_world[1], TRANSIT_HEIGHT])
-            transit_target = np.array([action.pick_world[0], action.pick_world[1], action.pick_world[2] + 0.1])
+            transit_height = (
+                lean_safety_height(action.pick_world[2] + 0.1)
+                if action.is_leaning
+                else action.pick_world[2] + 0.1
+            )
+            transit_target = np.array([action.pick_world[0], action.pick_world[1], transit_height])
             return self._move_to(
                 observation, transit_target, gripper=1.0, next_stage="align_pick",
                 stage_name="transit_pick", action=action, guard_height=transit_target[2],
+                target_quaternion=action.pick_quaternion,
             )
         if self.stage == "align_pick":
             # Rotate in place (xy/z fixed at transit height) before
@@ -193,8 +230,8 @@ class StudentPolicy:
             # xy is already aligned with the target; only z changes here.
             # 在抓取目标位置基础上再降低0.02m，让夹爪抓得更低
             pick_target = action.pick_world.copy()
-            pick_target[1] -= 0.008
-            pick_target[2] -= 0.015  # ← Z轴向下为负，根据需要调整此值
+            #pick_target[1] -= 0.008
+            #pick_target[2] -= 0.015  # ← Z轴向下为负，根据需要调整此值
             return self._move_to(
                 observation, pick_target, gripper=1.0, next_stage="settle_before_close",
                 stage_name="descend_pick", action=action,
@@ -205,22 +242,35 @@ class StudentPolicy:
         if self.stage == "close":
             return self._close_gripper(observation, action)
         if self.stage == "rise_after_pick":
-            rise_target = np.array([action.pick_world[0], action.pick_world[1], action.place_world[2]+0.1])
+            lift_height = (
+                lean_safety_height(action.place_world[2] + 0.1)
+                if action.is_leaning
+                else action.place_world[2] + 0.1
+            )
+            rise_target = np.array([action.pick_world[0], action.pick_world[1], lift_height])
             next_stage = "transit_place" if action.place_world is not None else "verify"
             # Keep whatever orientation the object was actually grasped at
             # while carrying it: snapping back to the home orientation here
             # would rotate a held object mid-carry for no reason, risking
             # the exact grip-loosening-under-motion failure already fixed.
+            # A leaning grasp keeps its lean_quaternion tilt for the entire
+            # carry too -- switching back to vertical mid-carry would risk
+            # the same grip-loosening-under-motion failure for no benefit.
             return self._move_to(
                 observation, rise_target, gripper=0.0, next_stage=next_stage,
                 stage_name="lift", action=action, target_quaternion=action.pick_quaternion,position_tolerance=0.038,guard_height=rise_target[2]
             )
         if self.stage == "transit_place":
             assert action.place_world is not None
-            transit_target = np.array([action.place_world[0], action.place_world[1], action.place_world[2]+0.1])
+            transit_place_height = (
+                lean_safety_height(action.place_world[2] + 0.1)
+                if action.is_leaning
+                else action.place_world[2] + 0.1
+            )
+            transit_target = np.array([action.place_world[0], action.place_world[1], transit_place_height])
             return self._move_to(
                 observation, transit_target, gripper=0.0, next_stage="descend_place",
-                stage_name="transit_place", action=action, guard_height=action.place_world[2]+0.1,
+                stage_name="transit_place", action=action, guard_height=transit_place_height,
                 target_quaternion=action.pick_quaternion,position_tolerance=POSITION_TOLERANCE+0.01
             )
         if self.stage == "descend_place":
@@ -333,11 +383,23 @@ class StudentPolicy:
             # fingers land nearer the object's upper half, safely above
             # whatever the true surface turns out to be.
             pick_world[2] += GRASP_HEIGHT_SAFETY_FRACTION * pick_spec.half_height
-            pick_quaternion = (
-                self._grasp_quaternion(detected.quaternion)
-                if detected.elongation >= ELONGATION_ALIGN_THRESHOLD
-                else None
-            )
+            # A target far enough from the arm base that a straight-down
+            # descent cannot reach it (verified against
+            # DampedLeastSquaresIK.solve: converges out to ~0.74m straight
+            # down, ~0.80m leaned) gets a forward-tilted grasp instead. This
+            # takes priority over yaw alignment: a lean already fixes the
+            # orientation to reach the target at all, so there is no spare
+            # degree of freedom left to also align to the object's long
+            # axis without risking non-convergence.
+            leaning = needs_lean(pick_world[:2], category=pick_spec.category)
+            if leaning:
+                pick_quaternion = lean_quaternion(self.home_quaternion, pick_world[:2])
+            else:
+                pick_quaternion = (
+                    self._grasp_quaternion(detected.quaternion)
+                    if detected.elongation >= ELONGATION_ALIGN_THRESHOLD
+                    else None
+                )
 
             place_world = None
             if planned.place_id is not None:
@@ -347,7 +409,8 @@ class StudentPolicy:
                 )
             actions.append(
                 _PickPlaceAction(
-                    planned.pick_id, planned.place_id, pick_world, place_world, pick_quaternion
+                    planned.pick_id, planned.place_id, pick_world, place_world, pick_quaternion,
+                    is_leaning=leaning,
                 )
             )
 

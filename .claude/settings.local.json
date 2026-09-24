@@ -27,7 +27,26 @@
       "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'control_dt\\\\|control_budget' src/graspbench/env.py src/graspbench/config.py | head -20\")",
       "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'control_substeps' src/graspbench/env.py\")",
       "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'HOME_Q' policies/student_policy.py\")",
-      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'def _move_to_clear_view\\\\|def _restore_pose\\\\|def _ensure_plan' policies/student_policy.py\")"
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'def _move_to_clear_view\\\\|def _restore_pose\\\\|def _ensure_plan' policies/student_policy.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && ls policies/__init__.py 2>&1 && cat policies/__init__.py\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'category' src/graspbench/config.py | grep -i mustard\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'mustard_bottle' -A 8 src/graspbench/config.py | head -20\")",
+      "Bash(wsl -e bash -lc \"cd ~/mujoco-grasp-assignment && grep -n 'def _move_to' -A 45 policies/student_policy.py | head -50\")",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/runs/task2_fix_v25/t2_public_001\" && cat summary.json 2>&1)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/runs/task2_fix_v25/**)",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/runs/task2_fix_v19/t2_public_001\" && ls -la && cat summary.json 2>&1 | head -100)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/runs/task2_fix_v19/**)",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/runs\" && wc -l task3_verify_v65/t3_public_002/events.jsonl task3_t002_verify_v66/t3_public_002/events.jsonl)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/**)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record/runs/task3_verify_v65/**)",
+      "Bash(awk 'NR==1500' events.jsonl)",
+      "Bash(python3)",
+      "Bash(awk -F'\"stage\":\"' '{print $2}')",
+      "Bash(awk -F'\"' '{print $1}')",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment\" && ls sam_server.py 2>&1; find . -maxdepth 1 -iname \"*sam_server*\" 2>&1 *)",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record\" && wc -l \"GPT纠错日志.md\")",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment\" && ls *.log *.txt 2>&1 *)",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/suian-wu/mujoco-grasp-assignment/right_policy_and_record\" && grep -n \"OWLv2\\\\|Grounding-DINO\\\\|Grounding DINO\\\\|检出率\\\\|命中率\\\\|sam_server\" STUDENT_POLICY_CHANGELOG_ZH.md)"
     ]
   }
 }

@@ -1,0 +1,60 @@
+{
+  "episode_id": "t1_public_005",
+  "split": "public",
+  "seed": 35,
+  "instruction": "把绿色圆柱体放到方盘里面。",
+  "expected_target": "green_cylinder",
+  "selected_target": "green_cylinder",
+  "target_selection_correct": true,
+  "task_plan_matches_hidden_goal": true,
+  "success": true,
+  "terminal_reason": "success",
+  "control_steps": 374,
+  "control_budget": 800,
+  "sim_time_s": 15.200000000001745,
+  "wall_time_s": 75.32914610000444,
+  "execution_mode": "async",
+  "realtime": true,
+  "async_control": {
+    "submitted": 179,
+    "accepted": 178,
+    "stale_dropped": 0,
+    "model_errors": 0,
+    "safe_hold_steps": 13,
+    "reused_command_steps": 183,
+    "last_latency_s": 0.1702201000007335
+  },
+  "last_stage": "release",
+  "verification_observed": true,
+  "retry_count": 0,
+  "unsafe_contact_count": 0,
+  "object_xy_displacement_m": {
+    "red_cube": 3.748647122126465e-15,
+    "green_cylinder": 0.2221823692966341,
+    "blue_box": 1.5706866507778607e-14
+  },
+  "max_non_target_xy_displacement_m": 1.5706866507778607e-14,
+  "object_catalog": [
+    "red_cube",
+    "green_cylinder",
+    "blue_box",
+    "banana",
+    "apple",
+    "orange",
+    "mustard_bottle",
+    "potted_meat_can",
+    "scissors",
+    "marker"
+  ],
+  "task_kind": "place",
+  "hidden_goals": [
+    {
+      "target": "green_cylinder",
+      "destination": "square_tray"
+    }
+  ],
+  "goal_status": {
+    "green_cylinder->square_tray": true
+  },
+  "completed_goal_count": 1
+}

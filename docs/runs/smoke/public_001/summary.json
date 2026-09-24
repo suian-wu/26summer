@@ -1,0 +1,60 @@
+{
+  "episode_id": "public_001",
+  "split": "public",
+  "seed": 0,
+  "instruction": "抓取桌面上的红色方块",
+  "expected_target": "red_cube",
+  "selected_target": null,
+  "target_selection_correct": false,
+  "task_plan_matches_hidden_goal": null,
+  "success": false,
+  "terminal_reason": "policy_done",
+  "control_steps": 2,
+  "control_budget": 800,
+  "sim_time_s": 0.32000000000000023,
+  "wall_time_s": 0.29170909999993455,
+  "execution_mode": "async",
+  "realtime": true,
+  "async_control": {
+    "submitted": 1,
+    "accepted": 1,
+    "stale_dropped": 0,
+    "model_errors": 0,
+    "safe_hold_steps": 1,
+    "reused_command_steps": 0,
+    "last_latency_s": 0.15272409999988668
+  },
+  "last_stage": "safe_stop",
+  "verification_observed": false,
+  "retry_count": 0,
+  "unsafe_contact_count": 0,
+  "object_xy_displacement_m": {
+    "red_cube": 6.316146995442491e-15,
+    "green_cylinder": 2.8030956903434843e-07,
+    "blue_box": 1.3840434043071807e-14
+  },
+  "max_non_target_xy_displacement_m": 2.8030956903434843e-07,
+  "object_catalog": [
+    "red_cube",
+    "green_cylinder",
+    "blue_box",
+    "banana",
+    "apple",
+    "orange",
+    "mustard_bottle",
+    "potted_meat_can",
+    "scissors",
+    "marker"
+  ],
+  "task_kind": "lift",
+  "hidden_goals": [
+    {
+      "target": "red_cube",
+      "destination": null
+    }
+  ],
+  "goal_status": {
+    "red_cube": false
+  },
+  "completed_goal_count": 0
+}

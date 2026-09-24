@@ -17,7 +17,9 @@ python -m graspbench.evaluate \
 
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 
-
+set -a
+source .env
+set +a 
 python -m graspbench.evaluate \
   --policy policies.student_policy:StudentPolicy \
   --tasks configs/task2_ycb_public.json \

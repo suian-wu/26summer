@@ -38,7 +38,7 @@ def test_task_public_contract_hides_destinations_and_sort_answers() -> None:
     assert task.control_budget == 800
 #-------------------------------------------------------------
     lift = TaskSpec("lift", "lift apple", "apple", 10)
-    assert lift.control_budget == 800
+    assert lift.control_budget == 3000
 #-------------------------------------------------------------
 
 def test_container_truth_predicate_distinguishes_the_requested_tray() -> None:

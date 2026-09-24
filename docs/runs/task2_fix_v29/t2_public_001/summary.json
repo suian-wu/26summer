@@ -1,0 +1,59 @@
+{
+  "episode_id": "t2_public_001",
+  "split": "public",
+  "seed": 61,
+  "instruction": "把香蕉放进圆盘。",
+  "expected_target": "banana",
+  "selected_target": "banana",
+  "target_selection_correct": true,
+  "task_plan_matches_hidden_goal": true,
+  "success": false,
+  "terminal_reason": "policy_done",
+  "control_steps": 257,
+  "control_budget": 800,
+  "sim_time_s": 10.520000000000183,
+  "wall_time_s": 42.92597670000032,
+  "execution_mode": "async",
+  "realtime": true,
+  "async_control": {
+    "submitted": 103,
+    "accepted": 103,
+    "stale_dropped": 0,
+    "model_errors": 0,
+    "safe_hold_steps": 22,
+    "reused_command_steps": 132,
+    "last_latency_s": 1.6685293000009551
+  },
+  "last_stage": "model_error",
+  "verification_observed": false,
+  "retry_count": 4,
+  "unsafe_contact_count": 0,
+  "object_xy_displacement_m": {
+    "banana": 0.002826407483955347,
+    "apple": 5.071387443695101e-06
+  },
+  "max_non_target_xy_displacement_m": 5.071387443695101e-06,
+  "object_catalog": [
+    "red_cube",
+    "green_cylinder",
+    "blue_box",
+    "banana",
+    "apple",
+    "orange",
+    "mustard_bottle",
+    "potted_meat_can",
+    "scissors",
+    "marker"
+  ],
+  "task_kind": "place",
+  "hidden_goals": [
+    {
+      "target": "banana",
+      "destination": "round_tray"
+    }
+  ],
+  "goal_status": {
+    "banana->round_tray": false
+  },
+  "completed_goal_count": 0
+}

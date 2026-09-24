@@ -1,0 +1,16 @@
+{
+  "episodes": 6,
+  "success_rate": 1.0,
+  "target_selection_accuracy": 1.0,
+  "verification_rate": 1.0,
+  "mean_control_steps": 349.3333333333333,
+  "mean_wall_time_s": 58.030102183334144,
+  "total_unsafe_contacts": 0,
+  "mean_non_target_displacement_m": 0.0014247593113853759,
+  "goal_completion_rate": 1.0,
+  "task_plan_match_rate": 1.0,
+  "policy": "policies.student_policy:StudentPolicy",
+  "task_file": "configs/task2_ycb_public.json",
+  "execution_mode": "async",
+  "realtime": true
+}

@@ -1,0 +1,76 @@
+{
+  "episode_id": "t3_public_003",
+  "split": "public",
+  "seed": 93,
+  "instruction": "请把苹果和橙子归到圆盘；芥末瓶和午餐肉罐归到方盘。",
+  "expected_target": "apple",
+  "selected_target": "mustard_bottle",
+  "target_selection_correct": true,
+  "task_plan_matches_hidden_goal": true,
+  "success": false,
+  "terminal_reason": "policy_done",
+  "control_steps": 2823,
+  "control_budget": 3000,
+  "sim_time_s": 113.15999999991767,
+  "wall_time_s": 494.5404677000006,
+  "execution_mode": "async",
+  "realtime": true,
+  "async_control": {
+    "submitted": 1350,
+    "accepted": 1350,
+    "stale_dropped": 0,
+    "model_errors": 0,
+    "safe_hold_steps": 27,
+    "reused_command_steps": 1446,
+    "last_latency_s": 1.489675900000293
+  },
+  "last_stage": "safe_stop",
+  "verification_observed": true,
+  "retry_count": 4,
+  "unsafe_contact_count": 0,
+  "object_xy_displacement_m": {
+    "apple": 0.40421797332272175,
+    "orange": 0.4082129588833427,
+    "mustard_bottle": 0.5154957487628847,
+    "potted_meat_can": 0.3614623279094386
+  },
+  "max_non_target_xy_displacement_m": 0.0,
+  "object_catalog": [
+    "red_cube",
+    "green_cylinder",
+    "blue_box",
+    "banana",
+    "apple",
+    "orange",
+    "mustard_bottle",
+    "potted_meat_can",
+    "scissors",
+    "marker"
+  ],
+  "task_kind": "sort",
+  "hidden_goals": [
+    {
+      "target": "apple",
+      "destination": "round_tray"
+    },
+    {
+      "target": "orange",
+      "destination": "round_tray"
+    },
+    {
+      "target": "mustard_bottle",
+      "destination": "square_tray"
+    },
+    {
+      "target": "potted_meat_can",
+      "destination": "square_tray"
+    }
+  ],
+  "goal_status": {
+    "apple->round_tray": false,
+    "orange->round_tray": false,
+    "mustard_bottle->square_tray": true,
+    "potted_meat_can->square_tray": true
+  },
+  "completed_goal_count": 2
+}
